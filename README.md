@@ -19,6 +19,30 @@ Of course, given support by the software that checks the RPZ or blocklist.
 
 The [hasher](cmd/hasher/) command can be used to take a list of domains on stdin and produce a hashed version on stdout with the provided key.
 
+## Example Code
+
+```
+package main
+
+import (
+	"fmt"
+	"github.com/massar/hashedrpz"
+)
+
+function main() {
+	h := hashedrpz.New("teststring")
+
+	o, err := h.Hash("host.example.net", 200)
+	if err != nil {
+		fmt.Printf("Hashing gave error %s", err)
+		return
+	}
+
+	fmt.Printf("Hashed to:\n%s\n", o)
+	return
+}
+```
+
 # Key selection & distribution
 
 The blake3 key can be based off any string, please select a long and complex one.
