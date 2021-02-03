@@ -17,7 +17,7 @@ secure, fast, keyed and can be used on shorter strings.
 These hashed domains can be used in RPZ, but also can be used in plain blocklists.
 Of course, given support by the software that checks the RPZ or blocklist.
 
-The [hasher](cmd/hasher/) command can be used to take a list of domains on stdin and produce a hashed version on stdout with the provided key.
+The example [hasher](cmd/hasher/) command can be used to take a list of domains on stdin and produce a hashed version on stdout with the provided key.
 
 ## Example Code
 
@@ -115,3 +115,5 @@ I'd like to thank the BLAKE3 team: [Jack O'Connor](https://github.com/oconnor663
 I recommend [Serious Cryptography by Jean-Philippe Aumasson](https://www.penguinrandomhouse.com/books/564922/serious-cryptography-by-jean-philippe-aumasson/) as a very good primer and background read and reference on these subjects.
 
 Thanks to [Paul Vixie](https://redbarn.org) and [Vernon Schryver](https://www.rhyolite.com) for [RPZ](https://tools.ietf.org/html/draft-ietf-dnsop-dns-rpz-00) and the many implementors of RPZ for enabling the blocking of malicious and the amazing work they have put into making the Internet a better place.
+
+Last, not least, thanks to [Peter van Dijk](https://github.com/habbie/) for many inputs and improvement suggestions.
