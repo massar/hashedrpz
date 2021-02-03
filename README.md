@@ -12,6 +12,10 @@ It hashes per sub-domain/label, thus enabling inclusion in RPZ and allowing wild
 HashedRPZ uses [BLAKE3](https://github.com/BLAKE3-team/BLAKE3) which was selected as it is
 secure, fast, keyed and can be used on shorter strings.
 
+# Documentation
+
+On [go.dev](https://pkg.go.dev/github.com/massar/hashedrpz) one can find the documentation for this tool that gets extracted by the golang documentation tools.
+
 # Usage
 
 These hashed domains can be used in RPZ, but also can be used in plain blocklists.
