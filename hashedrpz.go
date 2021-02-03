@@ -1,20 +1,35 @@
 package hashedrpz
 
 // HashedRPZ implements a hasher for generating HashedRPZ output from input domainnames.
-// See the presentation included in this repository for more details.
+// See the README.md and the presentation included in this repository for more details.
 
 import (
 	"encoding/base32"
 	"errors"
-	"strings"
 	"sync"
 
 	"github.com/zeebo/blake3"
 )
 
+// ErrInvalidOriginDomain is returned when the provided is empty, the root (.) or has a leading dot.
+var ErrInvalidOriginDomain = errors.New("Invalid Origin Domain (empty/root/leading-dot)")
+
+// ErrEmptyLabel is returned when it is attempted to encode an empty label
+var ErrEmptyLabel = errors.New("Empty Label provided (RPZ the root?)")
+
+// ErrWildcardNotAtStart is returned when there is a wildcard in the middle of the left hand side
+var ErrWildcardNotAtStart = errors.New("Wildcard (*) not at start of left hand side")
+
 // ErrTooLong indicates that the input domain was too long when hashed
 // the result from the Hash function is that final only contains the hashed
 // labels upto that error. The caller can decide to wildcard the domain or not.
+//
+// This is used for a very simple check that just checks that we will never exceed
+// the maximum domainlength; though, one already has to substract the $ORIGIN of
+// the domain (e.g. ```.rpz.example.net```) that this RPZ ownername is part of.
+// Thus typically, eg. given ```.rpz.example.net``` of length 14, it already becomes
+// 255-16-15 = 224; hence why 200 is normally the suggested value, but one can
+// accurately guess this value given the origin.
 var ErrTooLong = errors.New("Domain too long to hash")
 
 // encodeHexLowerCase is our base32 set akin to RFC4648 but lowercased
@@ -29,60 +44,117 @@ type HashedRPZ struct {
 	h *blake3.Hasher
 }
 
-// Hash hashes the given string s that should be in domain format (thus subdomain.example.com)
+// HashCallback is called by Hash after each sublabel has been hashed allowing
+// a caller to check at each part of the lefthandside the label that has been hashed.
+type HashCallback func(subdomain string, hash string)
+
+// NoCallback can be used to clearly show in the calling function that no callback is being used
+// (opposed to having a 'nil' and having to check what that nil is for)
+var NoCallback HashCallback = nil
+
+// Hash hashes the lefthandside that should be in domain format (thus ```host.example.org```)
 // and returns the HashedRPZ hashed variant of that.
 //
-// A mutex ensures that only one hasher at the same time runs
-// Create multiple HashedRPZ for parallel operation.
+// The origindomain (e.g. ```rpz.example.com```) is supplied to limit the
+// length of the resulting ownername to ensure it does not exceed the full
+// length of a domain name.
 //
-// Might return ErrTooLong (see description for details), thus do check.
-func (h *HashedRPZ) Hash(s string, maxdomainlen int) (final string, err error) {
-	h.Lock()
-	defer h.Unlock()
-
-	// Encode an empty label (root effectively) to empty
-	// Callers likely will want to avoid that situation unless one wants to block the whole Internet...
-	if len(s) == 0 {
+// The origindomain is not used for hashing, only for limiting/detecting length issues.
+//
+// A mutex ensures that only one hasher at the same time runs
+// Create multiple HashedRPZ, e.g. one per go process, for parallel operation.
+//
+// The callback will be called for every hashed label, thus allowing the user to do intermediate lookups.
+// One can use a function closure to pass parameters that the callback might need.
+//
+// Will return ErrInvalidOriginDomain if the origin domain is empty or root, or start with a '.'.
+//
+// Will return ErrEmptyLabel if the label to hash is empty, this to avoid blocking the root of DNS.
+//
+// Will return ErrWildcardNotAtStart when there is a wildcard not at the start of the left hand side.
+//
+// Might return ErrTooLong (see description for details on how to handle it),
+// thus do check for error returns.
+func (h *HashedRPZ) Hash(lefthandside string, origindomain string, callback HashCallback) (final string, err error) {
+	// Ensure that the origindomain is not empty or the root or has a leading dot.
+	if origindomain == "" || origindomain == "." || origindomain[0] == '.' {
+		err = ErrInvalidOriginDomain
 		return
 	}
 
-	// Split the full left hand side into labels
-	spl := strings.Split(s, ".")
+	// The maximum domain length:
+	// 255 - max ownername length as per RFC1035
+	//  16 - maximum hash length for a label
+	//   1 - the dot separating hash and origindomain
+	//   l - the length of the origindomain
+	//
+	// Noting that the 'spare' 16 bytes when triggered accomodates a '*.' wildcard easily.
+	maxdomainlen := 255 - 16 - 1 - len(origindomain)
 
-	// The full label upto the level we are hashing it
+	// Reject encoding an empty label (root effectively) to empty.
+	// Callers likely will want to avoid that situation unless one wants to block the whole Internet...
+	if len(lefthandside) == 0 {
+		err = ErrEmptyLabel
+		return
+	}
+
+	// The left hand side upto the level we are hashing
+	//
+	// This includes the whole domain up to that point in the subdomain,
+	// as then 'example' in 'example.net' will not hash the same as in 'example.org'
+	// and even better 'www' in 'www.example.net' will also be different from 'www.example.org'.
+	// thus making it near impossible to even distinguish between 'www' or any other hostname.
+	lhs := ""
 	label := ""
 
-	// Each label, starting at the TLD
-	for i := len(spl) - 1; i >= 0; i-- {
+	// Lock, to ensure we do not use the blake3 hasher recursively from multiple goprocs
+	h.Lock()
+	defer h.Unlock()
 
-		// Unfortunately, input domains can be very long already e.g. if
-		// there is a hash for a video-id or tracking purposes encoded in them
-		// thus we limit generating very long RPZ elements as they would not
-		// fit in the destination domain.
-		// and replace it with a wildcard; which might mean more gets blocked
-		// than needed.
-		if len(final) > maxdomainlen {
-			err = ErrTooLong
+	// Each label, starting at the TLD (right to left)
+	for i := len(lefthandside) - 1; i >= 0; i-- {
+		c := lefthandside[i]
+
+		// Encode a wildcard verbatim, as wildcards have special handling in DNS.
+		// Wildcards can only be at the start, thus stop processing further.
+		if c == '*' {
+			// Wildcard has to be at the start of the label and the only char in that label
+			if i != 0 || label != "" {
+				err = ErrWildcardNotAtStart
+				return
+			}
+
+			// No need to hash this further
+			final = "*." + final
+
+			// Call the callback
+			if callback != nil {
+				callback(lhs, final)
+			}
+
+			// Nothing left (i = 0, thus would break next anyway)
 			break
 		}
 
-		l := spl[i]
+		// Not a label seperator, then continue looking
+		if c != '.' {
+			// Prepend the char
+			lhs = string(c) + lhs
+			label = string(c) + label
 
-		// Encode a wildcard verbatim, as wildcards have special handling in DNS.
-		if l == "*" {
-			final = "*." + final
-			continue
+			// Start of the lefthandside?
+			if i != 0 {
+				continue
+			}
 		}
 
-		// Include the whole domain up to that point in the label,
-		// as then 'example' in 'example.net' will not hash the same as in 'example.org'
-		// and even better 'www' in 'www.example.net' will also be different from 'www.example.org'.
-		// thus making it near impossible to even distinguish between 'www' or any other hostname.
-		label = l + "." + label
+		// We hit a seperator or start of the lefthandside, thus hash this portion and test
 
-		// Hash the label and summarize it.
+		// Rest what we had upto now
 		h.h.Reset()
-		h.h.WriteString(label)
+
+		// Hash the collected lhs
+		h.h.WriteString(lhs)
 
 		// Determine the hash size based on the input string, this to limit
 		// the amount of hashed output characters, if we hash everything at
@@ -91,8 +163,8 @@ func (h *HashedRPZ) Hash(s string, maxdomainlen int) (final string, err error) {
 		// thus a short string does not quickly clash with a longer one.
 		//
 		// The output string length (digest length) does not fully disclose
-		// label length, though gives a decent hint.
-		m := len(l)
+		// left hand side length, though gives a decent hint.
+		m := len(label)
 		if m < 4 {
 			m = 4
 		} else if m < 8 {
@@ -111,12 +183,57 @@ func (h *HashedRPZ) Hash(s string, maxdomainlen int) (final string, err error) {
 		// Encode the hash into a base32-hex-lowercase string akin RRFC4648
 		b32 := noPadHexEncoding.EncodeToString(hsh)
 
-		// Prepend the base32hex-lc string
-		final = b32 + "." + final
+		if final == "" {
+			// First label thus it is the TLD
+			final = b32
+		} else {
+			// Prepend the base32hex-lowercase string
+			final = b32 + "." + final
+		}
+
+		// Unfortunately, input domains can be very long already e.g. if
+		// there is a hash for a video-id or tracking purposes encoded in them
+		// thus we limit generating very long RPZ elements as they would not
+		// fit in the destination domain.
+		// and replace it with a wildcard; which might mean more gets blocked
+		// than needed.
+		if len(final) >= maxdomainlen {
+			err = ErrTooLong
+			break
+		}
+
+		if callback != nil {
+			callback(lhs, final)
+		}
+
+		// Prefix a seperating dot for the next round
+		lhs = "." + lhs
+
+		// Reset gathering the label
+		label = ""
 	}
 
 	// Prepare for re-use, at least free up some things where possible
 	h.h.Reset()
+
+	return
+}
+
+// HashWildcard calls Hash() but when the maxdomainlength is exceeded, it encodes
+// the remaining labels as a wildcard inside the domain that fitted.
+//
+// Thus for example an input of ```host.v.e.r.y.l.o.n.g.example.com``` would
+// encode as ```*.n.g.example.com```.
+// (if the domainname would be much longer than given in this example, see test cases for the real version).
+func (h *HashedRPZ) HashWildcard(lefthandside string, origindomain string, callback HashCallback) (final string, iswildcard bool, err error) {
+	final, err = h.Hash(lefthandside, origindomain, callback)
+
+	// When the string was to long, prefix a wildcard and ignore the error
+	if err == ErrTooLong {
+		iswildcard = true
+		final = "*." + final
+		err = nil
+	}
 
 	return
 }
