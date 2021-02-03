@@ -98,28 +98,47 @@ func (h *HashedRPZ) Hash(lefthandside string, origindomain string, callback Hash
 		return
 	}
 
-	// The left hand side upto the level we are hashing
+	// lhs tracks the left hand side upto the level we are hashing.
+	// We use offsets (lhs + label) into lefthandside to avoid copying of the string.
 	//
 	// This includes the whole domain up to that point in the subdomain,
 	// as then 'example' in 'example.net' will not hash the same as in 'example.org'
 	// and even better 'www' in 'www.example.net' will also be different from 'www.example.org'.
 	// thus making it near impossible to even distinguish between 'www' or any other hostname.
-	lhs := ""
-	label := ""
+	//
+	// label indicates the 'end' of the label
+	//
+	//          +--- label
+	//          V
+	// left.hand.side
+	//      ^
+	//      +-- lhs
+	//
+	// Thus  lefthandside[lhs:] gives us 'hand.side'.
+	// while lefthandside[lhs:label] gives us 'hand'.
+	//
+	// We start at the end of the label.
+	lhs := len(lefthandside) - 1
+	label := lhs + 1
 
 	// Lock, to ensure we do not use the blake3 hasher recursively from multiple goprocs
 	h.Lock()
 	defer h.Unlock()
 
 	// Each label, starting at the TLD (right to left)
-	for i := len(lefthandside) - 1; i >= 0; i-- {
+	for i := lhs; i >= 0; i-- {
 		c := lefthandside[i]
+
+		// When no dot yet, this is the left hand side
+		if c != '.' {
+			lhs = i
+		}
 
 		// Encode a wildcard verbatim, as wildcards have special handling in DNS.
 		// Wildcards can only be at the start, thus stop processing further.
 		if c == '*' {
 			// Wildcard has to be at the start of the label and the only char in that label
-			if i != 0 || label != "" {
+			if i != 0 || label != lhs+1 {
 				err = ErrWildcardNotAtStart
 				return
 			}
@@ -129,32 +148,25 @@ func (h *HashedRPZ) Hash(lefthandside string, origindomain string, callback Hash
 
 			// Call the callback
 			if callback != nil {
-				callback(lhs, final)
+				callback(lefthandside[lhs:], final)
 			}
 
 			// Nothing left (i = 0, thus would break next anyway)
 			break
 		}
 
-		// Not a label seperator, then continue looking
-		if c != '.' {
-			// Prepend the char
-			lhs = string(c) + lhs
-			label = string(c) + label
-
-			// Start of the lefthandside?
-			if i != 0 {
-				continue
-			}
+		// Not a label seperator and not at the start, then continue looking
+		if c != '.' && i != 0 {
+			continue
 		}
 
-		// We hit a seperator or start of the lefthandside, thus hash this portion and test
+		// We hit a separator or start of the lefthandside, thus hash this portion and test
 
 		// Rest what we had upto now
 		h.h.Reset()
 
-		// Hash the collected lhs
-		h.h.WriteString(lhs)
+		// Hash the current part of the lefthandside
+		h.h.WriteString(lefthandside[lhs:])
 
 		// Determine the hash size based on the input string, this to limit
 		// the amount of hashed output characters, if we hash everything at
@@ -164,7 +176,7 @@ func (h *HashedRPZ) Hash(lefthandside string, origindomain string, callback Hash
 		//
 		// The output string length (digest length) does not fully disclose
 		// left hand side length, though gives a decent hint.
-		m := len(label)
+		m := label - lhs
 		if m < 4 {
 			m = 4
 		} else if m < 8 {
@@ -203,14 +215,11 @@ func (h *HashedRPZ) Hash(lefthandside string, origindomain string, callback Hash
 		}
 
 		if callback != nil {
-			callback(lhs, final)
+			callback(lefthandside[lhs:], final)
 		}
 
-		// Prefix a seperating dot for the next round
-		lhs = "." + lhs
-
-		// Reset gathering the label
-		label = ""
+		// The label ends just before the current separator (.)
+		label = lhs - 1
 	}
 
 	// Prepare for re-use, at least free up some things where possible
