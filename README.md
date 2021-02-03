@@ -29,21 +29,21 @@ The example [hasher](cmd/hasher/) command can be used to take a list of domains 
 package main
 
 import (
-	"fmt"
-	"github.com/massar/hashedrpz"
+        "fmt"
+        "github.com/massar/hashedrpz"
 )
 
-function main() {
-	h := hashedrpz.New("teststring")
+func main() {
+        h := hashedrpz.New("rpz.example.net: bCHn57T5 HHT6oM4e ... 34KycTqD")
 
-	o, err := h.Hash("host.example.net", 200)
-	if err != nil {
-		fmt.Printf("Hashing gave error %s", err)
-		return
-	}
+        o, err := h.Hash("host.example.com", "rpz.example.net", nil)
+        if err != nil {
+                fmt.Printf("Hashing gave error %s", err)
+                return
+        }
 
-	fmt.Printf("Hashed to:\n%s\n", o)
-	return
+        fmt.Printf("Hashed to:\n%s\n", o)
+        return
 }
 ```
 
