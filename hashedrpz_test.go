@@ -4,7 +4,9 @@ package hashedrpz
 
 import (
 	"bufio"
+	"compress/gzip"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -192,8 +194,8 @@ func BenchmarkHashMany(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		_, err := h.Hash(input, origindomain, NoCallback)
-		if err != nil {
-			b.Errorf("Failed: %s", err)
+		if err != ErrTooLong {
+			b.Errorf("Failed, expected ErrTooLong, but got: %s", err)
 			return
 		}
 	}
@@ -227,33 +229,53 @@ func BenchmarkHashSimple(b *testing.B) {
 func BenchmarkHash10M(b *testing.B) {
 	h := New("teststring: 2TIjIdz1 kfxooz7K NjfzpX2I AwJ8UODq 9A2QO8b1 tesMp3Kx Ik4qmDsM fB89XVQe")
 
-	file, err := os.Open("tests/queryfile-example-10million-201202")
+	testfile := "tests/queryfile-example-10million-201202.gz"
+
+	file, err := os.Open(testfile)
 
 	if err != nil {
-		b.Fatalf("failed opening file: %s", err)
+		b.Fatalf("Failed opening file %q: %s", testfile, err)
+		return
 	}
 
 	defer file.Close()
 
-	scanner := bufio.NewScanner(file)
+	gz, err := gzip.NewReader(file)
+	if err != nil {
+		b.Fatalf("Failed to ungz %q: %s", testfile, err)
+		return
+	}
+
+	scanner := bufio.NewScanner(gz)
 	scanner.Split(bufio.ScanLines)
 
 	i := 0
 	toolong := 0
+	wrongwildcard := 0
+	totlength := 0
+	totlabels := 0
 
 	for scanner.Scan() {
 		input := scanner.Text()
 
 		i++
-		//if i >= b.N {
-		//	break
-		//}
+
+		// track the total input length
+		totlength += len(input)
+
+		// track the amount of labels
+		totlabels += strings.Count(input, ".")
 
 		_, err := h.Hash(input, origindomain, NoCallback)
 
 		// Ignore this situation
 		if err == ErrTooLong {
 			toolong++
+			continue
+		}
+
+		if err == ErrWildcardNotAtStart {
+			wrongwildcard++
 			continue
 		}
 
@@ -265,6 +287,15 @@ func BenchmarkHash10M(b *testing.B) {
 
 	b.N = i
 	b.ReportMetric(float64(toolong), "toolong")
+	b.ReportMetric(float64(wrongwildcard), "wrongwildcard")
+	b.ReportMetric(float64(totlength/i), "avg.length")
+	b.ReportMetric(float64(totlabels/i), "avg.#labels")
+
+	// Note that these stats are skewed by broken DNS records that Hash() will reject
+	// as the #labels is not correct when there is for instance "....net".
+	//
+	// Benchmarks are indicators anyway, not conclusive speedtests, as each platform is different
+	// and in the above we include the counting of the labels and the error checking.
 
 	return
 }
