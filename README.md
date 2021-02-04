@@ -83,7 +83,7 @@ with a rotating key, that becomes rather hard.
 The algorithm is relatively simple (the hard part lives in blake3):
 
  - Split the label by component
- - if the label is a wildcard (*), keep it verbatim (unencrypted)
+ - if the label is a wildcard (*), keep it verbatim
  - Hash with blake3 keyed with key each sublabel, but as a complete domain upto that point
  - Output the hash using base32hex lowercase (RFC4648)
 
