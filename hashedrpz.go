@@ -155,7 +155,7 @@ func (h *HashedRPZ) Hash(lefthandside string, origindomain string, callback Hash
 			break
 		}
 
-		// Not a label seperator and not at the start, then continue looking
+		// Not a label separator and not at the start, then continue looking
 		if c != '.' && i != 0 {
 			continue
 		}
@@ -192,7 +192,7 @@ func (h *HashedRPZ) Hash(lefthandside string, origindomain string, callback Hash
 		d := h.h.Digest()
 		d.Read(hsh)
 
-		// Encode the hash into a base32-hex-lowercase string akin RRFC4648
+		// Encode the hash into a base32-hex-lowercase string akin RFC4648
 		b32 := noPadHexEncoding.EncodeToString(hsh)
 
 		if final == "" {
