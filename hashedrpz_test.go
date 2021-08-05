@@ -37,10 +37,11 @@ var tests = []htest{
 	{"www.example.net", "4ln83mo.kj8qsm2gn1o42.1qpnbgg", nil, nil, 3},
 	{"longerlabel.example.net", "n10m898sngepm1u6t1h4hjkqhc.kj8qsm2gn1o42.1qpnbgg", nil, nil, 3},
 	{"*.example.net", "*.kj8qsm2gn1o42.1qpnbgg", nil, nil, 3},
+	{"*.*.example.net", "", ErrWildcardNotAtStart, ErrWildcardNotAtStart, 2},
 	{"notatstart.*.example.net", "", ErrWildcardNotAtStart, ErrWildcardNotAtStart, 2},
 	{"*middle.example.net", "", ErrWildcardNotAtStart, ErrWildcardNotAtStart, 2},
 	{"m*.example.net", "", ErrWildcardNotAtStart, ErrWildcardNotAtStart, 2},
-	{"a.b.c.d.e.f.g.h.i.j.k.l.m.n.o.p.q.r.s.t.u.v.w.x.y.z.0123456789abcdefghijklmnopqrstuv.example.net", "*.j5ni418.hv8ls60.ptilhs8.11v1t7g.6esbkao.kce9ido.ib563vg.4dlie60.ckn4lb0.kibrgt8.j2lie10.k481ego.2e8lg50.n1lr5g8.qcs689g.klfks3o.m86tq2g.jsheic0.v3009s8.sou3820.vbkvv38.679i40o.bqfs4mpqnia3vm63efg45eg7t0.kj8qsm2gn1o42.1qpnbgg", ErrTooLong, nil, 16},
+	{"a.b.c.d.e.f.g.h.i.j.k.l.m.n.o.p.q.r.s.t.u.v.w.x.y.z.0123456789abcdefghijklmnopqrstuv.example.net", "*.j5ni418.hv8ls60.ptilhs8.11v1t7g.6esbkao.kce9ido.ib563vg.4dlie60.ckn4lb0.kibrgt8.j2lie10.k481ego.2e8lg50.n1lr5g8.qcs689g.klfks3o.m86tq2g.jsheic0.v3009s8.sou3820.vbkvv38.679i40o.bqfs4mpqnia3vm63efg45eg7t0.kj8qsm2gn1o42.1qpnbgg", ErrTooLong, nil, 24},
 }
 
 // TestHash provides a very simple test covering all code paths
@@ -139,8 +140,12 @@ func TestHashCallback(t *testing.T) {
 
 			o, err := h.Hash(tt.Input, origindomain, func(subdomain string, hash string) {
 				callbacks++
-				t.Logf("Callback for %q %q %q : %q", tt.Input, origindomain, subdomain, hash)
+				t.Logf("Callback %d for %q %q %q : %q", callbacks, tt.Input, origindomain, subdomain, hash)
 			})
+
+			if callbacks != tt.NumCallBacks {
+				t.Errorf("Expected %d callbacks, got %d", tt.NumCallBacks, callbacks)
+			}
 
 			if err != tt.Error {
 				t.Errorf("Expected error %s but got: %s (%q [%d+1+%d=%d])", tt.Error, err, o, len(o), len(origindomain), len(o)+1+len(origindomain))
@@ -155,11 +160,6 @@ func TestHashCallback(t *testing.T) {
 				t.Errorf("Expected output %q but got: %q [%d+1+%d=%d]", tt.Output, o, len(o), len(origindomain), len(o)+len(origindomain)+1)
 				return
 			}
-
-			if callbacks != tt.NumCallBacks {
-				t.Errorf("Expected %d callbacks, got %d", tt.NumCallBacks, callbacks)
-			}
-
 		})
 	}
 
