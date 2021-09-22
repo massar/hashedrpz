@@ -1,6 +1,6 @@
 # HashedRPZ by Jeroen Massar
 
-This repository provides Golang code for the HashedRPZ implementation.
+This repository provides Golang and [C](c/) code for the HashedRPZ implementation.
 
 HashedRPZ provides a method of being able to distribute RPZ and normal domain block lists,
 without exposing the real contents to the world. This can be used for instance to block
@@ -16,6 +16,8 @@ secure, fast, keyed and can be used on shorter strings.
 
 On [go.dev](https://pkg.go.dev/github.com/massar/hashedrpz) one can find the documentation for this tool that gets extracted by the golang documentation tools.
 
+The [C](c/) version is rather similar, but shows that C does not have string handling and one has to then use good old memmove to prepend strings. The C edition is intended for integration with tools like [unbound](https://github.com/NLnetLabs/unbound).
+
 # Usage
 
 These hashed domains can be used in RPZ, but also can be used in plain blocklists.
@@ -23,7 +25,7 @@ Of course, given support by the software that checks the RPZ or blocklist.
 
 The example [hasher](cmd/hasher/) command can be used to take a list of domains on stdin and produce a hashed version on stdout with the provided key.
 
-## Example Code
+## Example Code (Golang)
 
 ```
 package main
@@ -46,6 +48,8 @@ func main() {
         return
 }
 ```
+
+The C edition is similar, see [hashedrpz_test.c](c/hashedrpz_test.c) for details.
 
 # Key selection & distribution
 
