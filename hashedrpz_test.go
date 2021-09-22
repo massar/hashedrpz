@@ -29,7 +29,7 @@ var tests = []htest{
 	{"", "", ErrEmptyLabel, ErrEmptyLabel, 0},
 	{"com", "8r4m02g", nil, nil, 1},
 	{"net", "1qpnbgg", nil, nil, 1},
-	{"org", "8v95da8", nil, nil, 1},
+	{"org.", "8v95da8", nil, nil, 1},
 	{"example.com", "slhf50h8dgst0.8r4m02g", nil, nil, 2},
 	{"example.net", "kj8qsm2gn1o42.1qpnbgg", nil, nil, 2},
 	{"example.org", "3m7l96r63tf8u.8v95da8", nil, nil, 2},
@@ -41,6 +41,8 @@ var tests = []htest{
 	{"notatstart.*.example.net", "", ErrWildcardNotAtStart, ErrWildcardNotAtStart, 2},
 	{"*middle.example.net", "", ErrWildcardNotAtStart, ErrWildcardNotAtStart, 2},
 	{"m*.example.net", "", ErrWildcardNotAtStart, ErrWildcardNotAtStart, 2},
+	{"empty..sublabel.example.net", "", ErrEmptySublabel, ErrEmptySublabel, 3},
+	{"empty.sublabel..", "", ErrEmptySublabel, ErrEmptySublabel, 0},
 	{"a.b.c.d.e.f.g.h.i.j.k.l.m.n.o.p.q.r.s.t.u.v.w.x.y.z.0123456789abcdefghijklmnopqrstuv.example.net", "*.j5ni418.hv8ls60.ptilhs8.11v1t7g.6esbkao.kce9ido.ib563vg.4dlie60.ckn4lb0.kibrgt8.j2lie10.k481ego.2e8lg50.n1lr5g8.qcs689g.klfks3o.m86tq2g.jsheic0.v3009s8.sou3820.vbkvv38.679i40o.bqfs4mpqnia3vm63efg45eg7t0.kj8qsm2gn1o42.1qpnbgg", ErrTooLong, nil, 24},
 }
 

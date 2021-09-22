@@ -32,6 +32,9 @@ var ErrWildcardNotAtStart = errors.New("Wildcard (*) not at start of left hand s
 // accurately guess this value given the origin.
 var ErrTooLong = errors.New("Domain too long to hash")
 
+// ErrEmptySublabel is returned when a situation like "dom..example.com" is encountered
+var ErrEmptySublabel = errors.New("Empty Sub Label (eg. dom..example.com)")
+
 // encodeHexLowerCase is our base32 set akin to RFC4648 but lowercased
 const encodeHexLowerCase = "0123456789abcdefghijklmnopqrstuv"
 
@@ -55,6 +58,8 @@ var NoCallback HashCallback = nil
 // Hash hashes the lefthandside that should be in domain format (thus ```host.example.org```)
 // and returns the HashedRPZ hashed variant of that.
 //
+// Lefthandside is allowed to end to be fully qualified (ending in a '.') but it will be ignored.
+//
 // The origindomain (e.g. ```rpz.example.com```) is supplied to limit the
 // length of the resulting ownername to ensure it does not exceed the full
 // length of a domain name.
@@ -75,6 +80,8 @@ var NoCallback HashCallback = nil
 //
 // Might return ErrTooLong (see description for details on how to handle it),
 // thus do check for error returns.
+//
+// Will return ErrEmptySubLabel if an empty sublabel is found.
 func (h *HashedRPZ) Hash(lefthandside string, origindomain string, callback HashCallback) (final string, err error) {
 	// Ensure that the origindomain is not empty or the root or has a leading dot.
 	if origindomain == "" || origindomain == "." || origindomain[0] == '.' {
@@ -99,6 +106,20 @@ func (h *HashedRPZ) Hash(lefthandside string, origindomain string, callback Hash
 	}
 
 	// lhs tracks the left hand side upto the level we are hashing.
+	lhs := len(lefthandside)-1
+
+	// Remove the final dot if it exists
+	if (lefthandside[lhs] == '.') {
+		lefthandside = lefthandside[:lhs]
+		lhs--
+
+		// Still got a dot at the end?
+		if (lefthandside[lhs] == '.') {
+			err = ErrEmptySublabel
+			return
+		}
+	}
+
 	// We use offsets (lhs + label) into lefthandside to avoid copying of the string.
 	//
 	// This includes the whole domain up to that point in the subdomain,
@@ -118,7 +139,6 @@ func (h *HashedRPZ) Hash(lefthandside string, origindomain string, callback Hash
 	// while lefthandside[lhs:label] gives us 'hand'.
 	//
 	// We start at the end of the label.
-	lhs := len(lefthandside) - 1
 	label := lhs + 1
 
 	// Lock, to ensure we do not use the blake3 hasher recursively from multiple goprocs
@@ -162,12 +182,6 @@ func (h *HashedRPZ) Hash(lefthandside string, origindomain string, callback Hash
 
 		// We hit a separator or start of the lefthandside, thus hash this portion and test
 
-		// Rest what we had upto now
-		h.h.Reset()
-
-		// Hash the current part of the lefthandside
-		h.h.WriteString(lefthandside[lhs:])
-
 		// Determine the hash size based on the input string, this to limit
 		// the amount of hashed output characters, if we hash everything at
 		// 16 bytes, it would explode quickly.
@@ -177,13 +191,22 @@ func (h *HashedRPZ) Hash(lefthandside string, origindomain string, callback Hash
 		// The output string length (digest length) does not fully disclose
 		// left hand side length, though gives a decent hint.
 		m := label - lhs
-		if m < 4 {
+		if m <= 0 {
+			err = ErrEmptySublabel
+			return
+		} else if m < 4 {
 			m = 4
 		} else if m < 8 {
 			m = 8
 		} else {
 			m = 16
 		}
+
+		// Reset what we had upto now
+		h.h.Reset()
+
+		// Hash the current part of the lefthandside
+		h.h.WriteString(lefthandside[lhs:])
 
 		// Create a buffer for the output hash of the given length
 		hsh := make([]byte, m)
