@@ -1,0 +1,3 @@
+[submodule "c/BLAKE3"]
+	path = c/BLAKE3
+	url = https://github.com/BLAKE3-team/BLAKE3.git
